@@ -43,8 +43,9 @@ model User {
   updatedBy           User?     @relation("UpdatedBy", fields: [updatedById], references: [id])
   
   // Reverse relations
-  createdUsers        User[]    @relation("CreatedBy")
-  updatedUsers        User[]    @relation("UpdatedBy")
+  createdUsers        User[]        @relation("CreatedBy")
+  updatedUsers        User[]        @relation("UpdatedBy")
+  profile             UserProfile?  @relation("UserProfile")
 
   @@index([email])
   @@index([role])
@@ -54,4 +55,20 @@ model User {
   @@index([createdById])
   @@index([updatedById])
   @@map("users")
+}
+
+model UserProfile {
+  id               String    @id @default(uuid()) @db.Uuid
+  userId           String    @unique @db.Uuid
+  user             User      @relation("UserProfile", fields: [userId], references: [id], onDelete: Cascade)
+  age              Int?      @db.SmallInt
+  gender           String?   @db.VarChar(50)
+  fitnessLevel     String?   @db.VarChar(50)
+  goals            String[]  @default([])
+  preferredWorkouts String[] @default([])
+  workoutFrequency String?   @db.VarChar(50)
+  createdAt        DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime  @updatedAt @db.Timestamptz(3)
+  
+  @@map("user_profiles")
 }

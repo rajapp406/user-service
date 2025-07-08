@@ -1,9 +1,8 @@
 import { PartialType } from '@nestjs/mapped-types';
-import { IsBoolean, IsEmail, IsEnum, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsBoolean, IsEmail, IsEnum, IsNotEmpty, IsOptional, IsString, MinLength } from 'class-validator';
 import { UserRole } from '../entities/user.entity';
-import { CreateUserDto } from './create-user.dto';
 
-export class UpdateUserDto extends PartialType(CreateUserDto) {
+export class UpdateUserDto {
   @IsString()
   @IsOptional()
   firstName?: string;
@@ -17,8 +16,8 @@ export class UpdateUserDto extends PartialType(CreateUserDto) {
   email?: string;
 
   @IsString()
-  @MinLength(8)
   @IsOptional()
+  // Note: Password should be hashed by the Auth Service
   password?: string;
 
   @IsEnum(UserRole)
@@ -28,4 +27,27 @@ export class UpdateUserDto extends PartialType(CreateUserDto) {
   @IsBoolean()
   @IsOptional()
   isActive?: boolean;
+
+  @IsBoolean()
+  @IsOptional()
+  emailVerified?: boolean;
+
+  @IsOptional()
+  lastLoginAt?: Date;
+
+  @IsOptional()
+  lastActivityAt?: Date;
+
+  @IsOptional()
+  failedLoginAttempts?: number;
+
+  @IsOptional()
+  accountLockedUntil?: Date | null;
+
+  @IsOptional()
+  metadata?: Record<string, any>;
+
+  @IsString()
+  @IsOptional()
+  createdById?: string;
 }

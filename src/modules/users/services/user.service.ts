@@ -1,209 +1,193 @@
-import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { 
+  ConflictException, 
+  Injectable, 
+  Logger, 
+  NotFoundException 
+} from '@nestjs/common';
 import { IUserService } from '../interfaces/user-service.interface';
 import { IUserRepository } from '../interfaces/user-repository.interface';
 import { CreateUserDto } from '../dto/create-user.dto';
 import { UpdateUserDto } from '../dto/update-user.dto';
 import { UserResponseDto } from '../dto/user-response.dto';
-import { User } from '../entities/user.entity';
+import { User, UserRole } from '../entities/user.entity';
+import { AccountLockStatusDto, UnlockAccountDto } from '../dto/account-lock.dto';
 
 @Injectable()
 export class UserService implements IUserService {
   private readonly logger = new Logger(UserService.name);
-
+  
   constructor(private readonly userRepository: IUserRepository) {}
 
-  private async toResponseDto(user: User): Promise<UserResponseDto> {
-    const { password, _id, ...userData } = user as any;
-    return { ...userData, id: _id.toString() } as UserResponseDto;
+  private toResponseDto(user: User | null): UserResponseDto | null {
+    if (!user) return null;
+    
+    const { password, ...result } = user;
+    return {
+      ...result,
+      createdBy: user.createdBy ? this.toResponseDto(user.createdBy) : null,
+      updatedBy: user.updatedBy ? this.toResponseDto(user.updatedBy) : null,
+    } as UserResponseDto;
   }
 
-  async create(createUserDto: CreateUserDto): Promise<UserResponseDto> {
-    const existingUser = await this.userRepository.findByEmail(createUserDto.email);
+  async create(createUserDto: CreateUserDto, createdById?: string): Promise<UserResponseDto> {
+    const existingUser = await this.userRepository.findOne({ email: createUserDto.email });
     if (existingUser) {
       throw new ConflictException('Email already in use');
     }
 
-    const user = await this.userRepository.create(createUserDto);
-    return this.toResponseDto(user);
+    // Create user data with required fields
+    const userData: Partial<User> = {
+      firstName: createUserDto.firstName,
+      lastName: createUserDto.lastName ?? null,
+      email: createUserDto.email,
+      password: createUserDto.password,
+      role: createUserDto.role ?? UserRole.MEMBER,
+      isActive: true,
+      emailVerified: createUserDto.emailVerified ?? false,
+      metadata: createUserDto.metadata ?? null,
+      createdById: createdById || null,
+      updatedById: createdById || null,
+    };
+
+    const user = await this.userRepository.create(userData);
+    return this.toResponseDto(user)!;
   }
 
-  async findAll(): Promise<UserResponseDto[]> {
-    const users = await this.userRepository.find({});
-    return Promise.all(users.map(user => this.toResponseDto(user)));
+  async findAll(filter: any = {}): Promise<UserResponseDto[]> {
+    const users = await this.userRepository.find({ ...filter, deletedAt: null });
+    return users.map(user => this.toResponseDto(user)!);
   }
 
   async findOne(id: string): Promise<UserResponseDto> {
-    const user = await this.userRepository.findOne({ id });
+    const user = await this.userRepository.findOne({ id, deletedAt: null });
     if (!user) {
       throw new NotFoundException(`User with ID ${id} not found`);
     }
-    return this.toResponseDto(user);
+    return this.toResponseDto(user)!;
   }
 
   async update(id: string, updateUserDto: UpdateUserDto): Promise<UserResponseDto> {
-    if (updateUserDto.email) {
-      const existingUser = await this.userRepository.findByEmail(updateUserDto.email);
-      if (existingUser && (existingUser as any)._id.toString() !== id) {
+    const user = await this.userRepository.findOne({ id, deletedAt: null });
+    if (!user) {
+      throw new NotFoundException(`User with ID ${id} not found`);
+    }
+
+    if (updateUserDto.email && updateUserDto.email !== user.email) {
+      const existingUser = await this.userRepository.findOne({ 
+        email: updateUserDto.email,
+        NOT: {
+          id: id
+        }
+      });
+      
+      if (existingUser) {
         throw new ConflictException('Email already in use');
       }
     }
 
-    const updatedUser = await this.userRepository.update(id, updateUserDto);
+    const updateData = {
+      ...updateUserDto,
+      ...(updateUserDto.password && { passwordChangedAt: new Date() }),
+    };
+
+    const updatedUser = await this.userRepository.update(id, updateData);
     if (!updatedUser) {
       throw new NotFoundException(`User with ID ${id} not found`);
     }
-
-    return this.toResponseDto(updatedUser);
+    return this.toResponseDto(updatedUser)!;
   }
 
-  async remove(id: string): Promise<void> {
-    const result = await this.userRepository.delete(id);
+  async remove(id: string, deletedById: string): Promise<void> {
+    const result = await this.userRepository.softDelete(id, deletedById);
     if (!result) {
       throw new NotFoundException(`User with ID ${id} not found`);
     }
   }
 
-  async updateLastActivity(email: string): Promise<void> {
-    try {
-      const user = await this.userRepository.findByEmail(email);
-      if (user) {
-        const updatedUser = await this.userRepository.update((user as any)._id.toString(), { lastActivityAt: new Date() });
-        if (!updatedUser) {
-          throw new NotFoundException(`User with email ${email} not found`);
-        }
-      }
-    } catch (error) {
-      this.logger.error(`Error updating last activity for user ${email}:`, error);
-      throw error;
-    }
-  }
-
   async findByEmail(email: string): Promise<UserResponseDto | null> {
     const user = await this.userRepository.findByEmail(email);
-    return user ? this.toResponseDto(user) : null;
-  }
-
-  async incrementFailedLoginAttempts(email: string): Promise<void> {
-    try {
-      const user = await this.userRepository.findByEmail(email);
-      if (!user) {
-        this.logger.warn(`Attempted to increment failed login attempts for non-existent user: ${email}`);
-        return;
-      }
-
-      const MAX_FAILED_ATTEMPTS = 5;
-      const LOCKOUT_DURATION_MINUTES = 30;
-      
-      // Increment failed attempts
-      const updatedFailedAttempts = (user.failedLoginAttempts || 0) + 1;
-      
-      // Check if account should be locked
-      const shouldLockAccount = updatedFailedAttempts >= MAX_FAILED_ATTEMPTS;
-      const lockUntil = shouldLockAccount 
-        ? new Date(Date.now() + LOCKOUT_DURATION_MINUTES * 60 * 1000) // Lock for 30 minutes
-        : null;
-
-      await this.userRepository.update((user as any)._id.toString(), {
-        failedLoginAttempts: updatedFailedAttempts,
-        accountLockedUntil: lockUntil,
-        ...(shouldLockAccount && { isActive: false }) // Deactivate account if locked
-      });
-
-      if (shouldLockAccount) {
-        this.logger.warn(`Account locked for user ${email} due to too many failed login attempts. Locked until: ${lockUntil}`);
-      } else {
-        this.logger.debug(`Incremented failed login attempts for user ${email}. Current attempts: ${updatedFailedAttempts}`);
-      }
-    } catch (error) {
-      this.logger.error(`Error incrementing failed login attempts for user ${email}:`, error);
-      throw error;
-    }
-  }
-
-  async getAccountLockStatus(email: string) {
-    try {
-      const user = await this.userRepository.findByEmail(email);
-      if (!user) {
-        throw new NotFoundException(`User with email ${email} not found`);
-      }
-
-      const now = new Date();
-      const isLocked = user.accountLockedUntil ? user.accountLockedUntil > now : false;
-      
-      return {
-        isLocked,
-        failedLoginAttempts: user.failedLoginAttempts || 0,
-        lockedUntil: isLocked ? user.accountLockedUntil : null,
-        email: user.email
-      };
-    } catch (error) {
-      this.logger.error(`Error getting account lock status for ${email}:`, error);
-      throw error;
-    }
-  }
-
-  async unlockAccount({ email, resetAttempts = true }: { email: string; resetAttempts?: boolean }) {
-    try {
-      const user = await this.userRepository.findByEmail(email);
-      if (!user) {
-        return { success: false, message: 'User not found' };
-      }
-
-      const updateData: any = {
-        accountLockedUntil: null,
-        isActive: true
-      };
-
-      if (resetAttempts) {
-        updateData.failedLoginAttempts = 0;
-      }
-
-      await this.userRepository.update((user as any)._id.toString(), updateData);
-      
-      this.logger.log(`Account unlocked for user: ${email}`);
-      return { 
-        success: true, 
-        message: 'Account unlocked successfully',
-        resetAttempts
-      };
-    } catch (error: any) {
-      this.logger.error(`Error unlocking account for ${email}:`, error);
-      return { 
-        success: false, 
-        message: 'Failed to unlock account',
-        error: error?.message || 'Unknown error'
-      };
-    }
-  }
-
-  async resetFailedLoginAttempts(email: string): Promise<void> {
-    try {
-      const user = await this.userRepository.findByEmail(email);
-      if (!user) {
-        this.logger.warn(`User not found with email: ${email}`);
-        return;
-      }
-      
-      await this.userRepository.update((user as any)._id.toString(), {
-        failedLoginAttempts: 0,
-        accountLockedUntil: null,
-        isActive: true // Reactivate account if it was locked
-      });
-
-      this.logger.debug(`Reset failed login attempts for user ${email}`);
-    } catch (error) {
-      this.logger.error(`Error resetting failed login attempts for user ${email}:`, error);
-      throw error;
-    }
+    return this.toResponseDto(user);
   }
 
   async updateLastLogin(userId: string): Promise<void> {
-    try {
-      await this.userRepository.updateLastLogin(userId);
-      this.logger.debug(`Updated last login timestamp for user ${userId}`);
-    } catch (error) {
-      this.logger.error(`Error updating last login for user ${userId}:`, error);
-      throw error;
+    await this.userRepository.update(userId, { lastLoginAt: new Date() });
+  }
+
+  async updatePassword(userId: string, hashedPassword: string): Promise<void> {
+    await this.userRepository.update(userId, { 
+      password: hashedPassword,
+      passwordChangedAt: new Date() 
+    });
+  }
+
+  async lockAccount(userId: string, until: Date): Promise<void> {
+    await this.userRepository.update(userId, { 
+      accountLockedUntil: until,
+      isActive: false 
+    });
+  }
+
+  async unlockAccount({ email, resetAttempts = true }: UnlockAccountDto): Promise<{ success: boolean; message: string }> {
+    const user = await this.userRepository.findByEmail(email);
+    if (!user) {
+      return { success: false, message: 'User not found' };
     }
+
+    const updateData = {
+      accountLockedUntil: null,
+      ...(resetAttempts && { failedLoginAttempts: 0 }),
+      isActive: true
+    };
+ 
+    await this.userRepository.update(user.id, updateData);
+    return { success: true, message: 'Account unlocked successfully' };
+  }
+
+  async getAccountLockStatus(email: string): Promise<AccountLockStatusDto> {
+    const user = await this.userRepository.findOne({ email });
+    if (!user) {
+      throw new NotFoundException(`User with email ${email} not found`);
+    }
+
+    const isLocked = user.accountLockedUntil ? user.accountLockedUntil > new Date() : false;
+    return {
+      isLocked,
+      failedLoginAttempts: user.failedLoginAttempts || 0,
+      lockedUntil: isLocked ? user.accountLockedUntil : null
+    };
+  }
+
+  async incrementFailedLoginAttempts(email: string): Promise<void> {
+    const user = await this.userRepository.findByEmail(email);
+    if (!user) {
+      throw new NotFoundException(`User with email ${email} not found`);
+    }
+    
+    const failedAttempts = (user.failedLoginAttempts || 0) + 1;
+    await this.userRepository.update(user.id, { 
+      failedLoginAttempts: failedAttempts 
+    });
+  }
+
+  async resetFailedLoginAttempts(email: string): Promise<void> {
+    const user = await this.userRepository.findByEmail(email);
+    if (!user) {
+      throw new NotFoundException(`User with email ${email} not found`);
+    }
+    
+    await this.userRepository.update(user.id, { 
+      failedLoginAttempts: 0 
+    });
+  }
+
+  async updateLastActivity(email: string): Promise<void> {
+    const user = await this.userRepository.findByEmail(email);
+    if (!user) {
+      throw new NotFoundException(`User with email ${email} not found`);
+    }
+    
+    await this.userRepository.update(user.id, { 
+      lastActivityAt: new Date() 
+    });
   }
 }

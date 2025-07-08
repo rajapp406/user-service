@@ -4,11 +4,11 @@ import { UserResponseDto } from '../dto/user-response.dto';
 import { AccountLockStatusDto, UnlockAccountDto } from '../dto/account-lock.dto';
 
 export interface IUserService {
-  create(createUserDto: CreateUserDto): Promise<UserResponseDto>;
+  create(createUserDto: CreateUserDto, createdById?: string): Promise<UserResponseDto>;
   findAll(): Promise<UserResponseDto[]>;
   findOne(id: string): Promise<UserResponseDto>;
   update(id: string, updateUserDto: UpdateUserDto): Promise<UserResponseDto>;
-  remove(id: string): Promise<void>;
+  remove(id: string, deletedById: string): Promise<void>;
   findByEmail(email: string): Promise<UserResponseDto | null>;
   updateLastActivity(email: string): Promise<void>;
   

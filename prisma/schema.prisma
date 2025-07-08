@@ -1,0 +1,57 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  TRAINER
+  MEMBER
+}
+
+model User {
+  id                  String    @id @default(uuid()) @db.Uuid
+  email               String    @unique @db.VarChar(255)
+  password            String    @db.Text
+  firstName           String    @db.VarChar(100)
+  lastName            String?   @db.VarChar(100)
+  role                UserRole  @default(MEMBER)
+  isActive            Boolean   @default(true)
+  emailVerified       Boolean   @default(false)
+  lastLoginAt         DateTime? @db.Timestamptz(3)
+  lastActivityAt      DateTime? @db.Timestamptz(3)
+  failedLoginAttempts Int       @default(0)
+  accountLockedUntil  DateTime? @db.Timestamptz(3)
+  metadata            Json?
+  passwordChangedAt   DateTime? @db.Timestamptz(3)
+  createdAt           DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime  @updatedAt @db.Timestamptz(3)
+  deletedAt           DateTime? @db.Timestamptz(3)
+  
+  // Relations
+  createdById         String?   @db.Uuid
+  createdBy           User?     @relation("CreatedBy", fields: [createdById], references: [id])
+  updatedById         String?   @db.Uuid
+  updatedBy           User?     @relation("UpdatedBy", fields: [updatedById], references: [id])
+  
+  // Reverse relations
+  createdUsers        User[]    @relation("CreatedBy")
+  updatedUsers        User[]    @relation("UpdatedBy")
+
+  @@index([email])
+  @@index([role])
+  @@index([isActive])
+  @@index([lastActivityAt])
+  @@index([createdAt])
+  @@index([createdById])
+  @@index([updatedById])
+  @@map("users")
+}

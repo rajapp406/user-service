@@ -24,6 +24,21 @@ export class UserResponseDto {
   @ApiProperty({ description: 'Whether the user account is active' })
   isActive: boolean;
 
+  @ApiProperty({ description: 'Whether the user\'s email is verified' })
+  emailVerified: boolean;
+
+  @ApiProperty({ 
+    description: 'Date when the user was last logged in',
+    required: false 
+  })
+  lastLoginAt?: Date;
+
+  @ApiProperty({ 
+    description: 'Date of the last user activity',
+    required: false 
+  })
+  lastActivityAt?: Date;
+
   @ApiProperty({ description: 'Date when the user was created' })
   createdAt: Date;
 
@@ -31,10 +46,10 @@ export class UserResponseDto {
   updatedAt: Date;
 
   @ApiProperty({ 
-    description: 'Date when the user was last logged in',
+    description: 'Date when the user was deleted (soft delete)',
     required: false 
   })
-  lastLoginAt?: Date;
+  deletedAt?: Date;
 
   constructor(partial: Partial<UserResponseDto>) {
     Object.assign(this, partial);

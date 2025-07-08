@@ -1,0 +1,87 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                String          @id @default(uuid())
+  email             String          @unique
+  password          String?
+  firstName         String?
+  lastName          String?
+  googleId          String?         @unique
+  avatar            String?
+  role              Role            @default(USER)
+  isEmailVerified   Boolean         @default(false)
+  verificationToken String?         @unique
+  resetToken        String?         @unique
+  resetTokenExpiry  DateTime?
+  lastLogin         DateTime?
+  authProvider      AuthProvider?   @default(EMAIL)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  profile           UserProfile?
+
+  refreshTokens     RefreshToken[]
+  sessions         Session[]
+
+  @@map("users")
+  @@index([googleId])
+  @@unique([email, authProvider])
+}
+
+model UserProfile {
+  id                String   @id @default(uuid())
+  userId            String   @unique
+  age               Int?
+  gender            String?
+  fitnessLevel      String?
+  goals             String[]
+  workoutFrequency  String?
+  preferredWorkouts String[]
+
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  revokedAt DateTime?
+
+  @@map("refresh_tokens")
+  @@index([userId])
+}
+
+model Session {
+  id           String    @id @default(uuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userAgent    String?
+  ipAddress    String?
+  lastActivity DateTime  @default(now())
+  createdAt    DateTime @default(now())
+  expiresAt    DateTime
+
+  @@map("sessions")
+  @@index([userId])
+}
+
+enum Role {
+  USER      @map("user")
+  ADMIN     @map("admin")
+  TRAINER   @map("trainer")
+}
+
+enum AuthProvider {
+  EMAIL     @map("email")
+  GOOGLE    @map("google")
+}

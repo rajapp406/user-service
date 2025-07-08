@@ -6,7 +6,7 @@ interface KafkaSASLConfig {
 
 export default () => {
   // Validate required environment variables
-  const requiredVars = ['MONGODB_URI'];
+  const requiredVars = ['DATABASE_URL'];
   const missingVars = requiredVars.filter(varName => !process.env[varName]);
   
   if (missingVars.length > 0) {
@@ -41,7 +41,7 @@ export default () => {
   return {
     port,
     database: {
-      uri: process.env.MONGODB_URI!,
+      url: process.env.DATABASE_URL!,
     },
     kafka: {
       brokers: process.env.KAFKA_BROKERS ? process.env.KAFKA_BROKERS.split(',') : ['localhost:9092'],

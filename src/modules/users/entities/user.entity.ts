@@ -1,53 +1,76 @@
-import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document, Types } from 'mongoose';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, DeleteDateColumn, ManyToOne, JoinColumn } from 'typeorm';
+import { UserRole } from '../enums/user-role.enum';
 
-export enum UserRole {
-  ADMIN = 'admin',
-  TRAINER = 'trainer',
-  MEMBER = 'member',
-}
-
-export type UserDocument = User & Document<Types.ObjectId> & {
-  _id: Types.ObjectId;
-  id: string;
-  createdAt: Date;
-  updatedAt: Date;
-};
-
-@Schema({ timestamps: true })
+@Entity('users')
 export class User {
-  @Prop({ type: String, required: true })
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column()
   firstName: string;
 
-  @Prop({ type: String })
-  lastName?: string;
+  @Column({ nullable: true })
+  lastName: string | null;
 
-  @Prop({ type: String, required: true, unique: true })
+  @Column({ unique: true })
   email: string;
 
-  @Prop({ type: String, required: true, select: false })
+  @Column()
   password: string;
 
-  @Prop({ type: String, enum: Object.values(UserRole), default: UserRole.MEMBER })
+  @Column({ type: 'enum', enum: UserRole, default: UserRole.MEMBER })
   role: UserRole;
 
-  @Prop({ type: Boolean, default: true })
+  @Column({ default: true })
   isActive: boolean;
 
-  @Prop({ type: Date })
-  lastLoginAt?: Date;
+  @Column({ default: false })
+  emailVerified: boolean;
 
-  @Prop({ type: Date })
-  lastActivityAt?: Date;
+  @Column({ nullable: true })
+  lastLoginAt: Date | null;
 
-  @Prop({ type: Object })
-  metadata?: Record<string, any>;
+  @Column({ nullable: true })
+  lastActivityAt: Date | null;
 
-  @Prop({ type: Number, default: 0 })
+  @Column({ default: 0 })
   failedLoginAttempts: number;
 
-  @Prop({ type: Date, default: null })
+  @Column({ nullable: true })
   accountLockedUntil: Date | null;
+
+  @Column('jsonb', { nullable: true })
+  metadata: Record<string, any> | null;
+
+  @Column({ nullable: true })
+  passwordChangedAt: Date | null;
+
+  @Column({ nullable: true })
+  createdById: string | null;
+
+  @Column({ nullable: true })
+  updatedById: string | null;
+
+  @DeleteDateColumn({ nullable: true })
+  deletedAt: Date | null;
+
+  @CreateDateColumn()
+  createdAt: Date;
+
+  @UpdateDateColumn()
+  updatedAt: Date;
+
+  @ManyToOne(() => User, { onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'createdById' })
+  createdBy: User | null;
+
+  @ManyToOne(() => User, { onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'updatedById' })
+  updatedBy: User | null;
+
+  @ManyToOne(() => User, { onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'deletedById' })
+  deletedBy: User | null;
 }
 
-export const UserSchema = SchemaFactory.createForClass(User);
+export { UserRole };

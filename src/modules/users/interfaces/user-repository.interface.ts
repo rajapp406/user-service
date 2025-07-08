@@ -11,6 +11,7 @@ export type FilterCondition<T> = {
 export interface IUserRepository {
   create(user: Partial<User>): Promise<User>;
   findOne(filter: FilterCondition<User>): Promise<User | null>;
+  findById(id: string): Promise<User | null>;
   find(filter?: FilterCondition<User>): Promise<User[]>;
   update(id: string, update: Partial<User>): Promise<User | null>;
   delete(id: string): Promise<boolean>;

@@ -1,8 +1,9 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { UsersModule } from './modules/users/users.module';
 import { AuthModule } from './core/auth/auth.module';
 import { KafkaModule } from './core/kafka/kafka.module';
+import { GrpcModule } from './modules/grpc/grpc.module';
 import configuration from './config/configuration';
 import { PrismaModule } from './prisma/prisma.module';
 
@@ -16,6 +17,7 @@ import { PrismaModule } from './prisma/prisma.module';
     UsersModule,
     AuthModule,
     KafkaModule,
+    GrpcModule.forRoot(),
   ],
   controllers: [],
   providers: [],

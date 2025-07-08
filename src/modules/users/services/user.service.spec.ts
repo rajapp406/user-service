@@ -10,6 +10,7 @@ import { UpdateUserDto } from '../dto/update-user.dto';
 // Create a complete mock implementation of IUserRepository
 const mockUserRepository: jest.Mocked<IUserRepository> = {
   findOne: jest.fn(),
+  findById: jest.fn(),
   findByEmail: jest.fn(),
   find: jest.fn(),
   create: jest.fn(),

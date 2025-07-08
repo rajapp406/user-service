@@ -18,19 +18,17 @@ import { USER_REPOSITORY, USER_SERVICE } from './users.constants';
   ],
   controllers: [UsersController, UserProfileController],
   providers: [
+    UserService,
+    {
+      provide: USER_SERVICE,
+      useClass: UserService,
+    },
     {
       provide: USER_REPOSITORY,
       useClass: PrismaUserRepository,
     },
-    {
-      provide: USER_SERVICE,
-      useFactory: (userRepository: IUserRepository) => new UserService(userRepository),
-      inject: [USER_REPOSITORY],
-    },
     UserProfileService,
   ],
-  exports: [
-    USER_SERVICE,
-  ],
+  exports: [USER_SERVICE],
 })
 export class UsersModule {}

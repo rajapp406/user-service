@@ -1,5 +1,6 @@
 import { 
   ConflictException, 
+  Inject, 
   Injectable, 
   Logger, 
   NotFoundException 
@@ -11,15 +12,18 @@ import { UpdateUserDto } from '../dto/update-user.dto';
 import { UserResponseDto } from '../dto/user-response.dto';
 import { User, UserRole } from '../entities/user.entity';
 import { AccountLockStatusDto, UnlockAccountDto } from '../dto/account-lock.dto';
+import { USER_REPOSITORY } from '../users.constants';
 
 @Injectable()
 export class UserService implements IUserService {
   private readonly logger = new Logger(UserService.name);
   
-  constructor(private readonly userRepository: IUserRepository) {}
+  constructor(@Inject(USER_REPOSITORY) private readonly userRepository: IUserRepository) {}
 
-  private toResponseDto(user: User | null): UserResponseDto | null {
-    if (!user) return null;
+  private toResponseDto(user: User): UserResponseDto {
+    if (!user) {
+      throw new Error('User cannot be null');
+    }
     
     const { password, ...result } = user;
     return {
@@ -28,10 +32,19 @@ export class UserService implements IUserService {
       updatedBy: user.updatedBy ? this.toResponseDto(user.updatedBy) : null,
     } as UserResponseDto;
   }
+  
+  private toResponseDtoOrNull(user: User | null): UserResponseDto | null {
+    return user ? this.toResponseDto(user) : null;
+  }
 
   async create(createUserDto: CreateUserDto, createdById?: string): Promise<UserResponseDto> {
+    // Check if user with the same email already exists
     const existingUser = await this.userRepository.findOne({ email: createUserDto.email });
     if (existingUser) {
+      // If createdById is provided, it's coming from gRPC, so return the existing user
+      if (createdById) {
+        return this.toResponseDto(existingUser);
+      }
       throw new ConflictException('Email already in use');
     }
 
@@ -59,15 +72,20 @@ export class UserService implements IUserService {
   }
 
   async findOne(id: string): Promise<UserResponseDto> {
-    const user = await this.userRepository.findOne({ id, deletedAt: null });
+    const user = await this.userRepository.findById(id);
     if (!user) {
       throw new NotFoundException(`User with ID ${id} not found`);
     }
-    return this.toResponseDto(user)!;
+    return this.toResponseDto(user);
+  }
+  
+  async findByEmail(email: string): Promise<UserResponseDto | null> {
+    const user = await this.userRepository.findByEmail(email);
+    return user ? this.toResponseDto(user) : null;
   }
 
   async update(id: string, updateUserDto: UpdateUserDto): Promise<UserResponseDto> {
-    const user = await this.userRepository.findOne({ id, deletedAt: null });
+    const user = await this.userRepository.findById(id);
     if (!user) {
       throw new NotFoundException(`User with ID ${id} not found`);
     }
@@ -104,10 +122,7 @@ export class UserService implements IUserService {
     }
   }
 
-  async findByEmail(email: string): Promise<UserResponseDto | null> {
-    const user = await this.userRepository.findByEmail(email);
-    return this.toResponseDto(user);
-  }
+
 
   async updateLastLogin(userId: string): Promise<void> {
     await this.userRepository.update(userId, { lastLoginAt: new Date() });

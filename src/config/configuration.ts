@@ -38,8 +38,19 @@ export default () => {
     };
   }
 
+  // Parse gRPC port with validation
+  const grpcPort = parseInt(process.env.GRPC_PORT || '50051', 10);
+  if (isNaN(grpcPort)) {
+    throw new Error('GRPC_PORT must be a valid number');
+  }
+
   return {
     port,
+    grpc: {
+      port: grpcPort,
+      host: process.env.GRPC_HOST || '0.0.0.0',
+      url: process.env.GRPC_URL || `0.0.0.0:${grpcPort}`,
+    },
     database: {
       url: process.env.DATABASE_URL!,
     },

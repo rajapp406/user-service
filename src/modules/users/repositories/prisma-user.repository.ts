@@ -7,12 +7,12 @@ import { User, UserRole } from '../entities/user.entity';
 type PrismaUser = any;
 
 // Helper function to convert between UserRole and Prisma's UserRole
-const toPrismaRole = (role: UserRole): string => {
-  return role as string;
+const toPrismaRole = (role: UserRole | undefined): string | undefined => {
+  return role as string | undefined;
 };
 
-const fromPrismaRole = (role: string): UserRole => {
-  return role as UserRole;
+const fromPrismaRole = (role: string | undefined | null): UserRole => {
+  return role as UserRole || UserRole.MEMBER;
 };
 
 @Injectable()
@@ -69,19 +69,103 @@ export class PrismaUserRepository implements IUserRepository {
     return user;
   }
 
+  // Convert filter conditions to Prisma where clause
+  private toPrismaWhere(conditions: FilterCondition<User>): any {
+    if (!conditions) return undefined;
+    
+    const where: any = {};
+    
+    for (const [key, value] of Object.entries(conditions)) {
+      if (value === undefined || value === null) continue;
+      
+      if (key === 'OR' || key === 'AND' || key === 'NOT') {
+        where[key] = Array.isArray(value) 
+          ? value.map((v: any) => this.toPrismaWhere(v as FilterCondition<User>)) 
+          : this.toPrismaWhere(value as FilterCondition<User>);
+      } else if (typeof value === 'object' && value !== null) {
+        // Handle operators
+        where[key] = {};
+        for (const [op, opValue] of Object.entries(value as object)) {
+          switch (op) {
+            case 'equals':
+              where[key].equals = opValue;
+              break;
+            case 'not':
+              where[key].not = opValue;
+              break;
+            case 'in':
+              where[key].in = opValue;
+              break;
+            case 'notIn':
+              where[key].notIn = opValue;
+              break;
+            case 'lt':
+              where[key].lt = opValue;
+              break;
+            case 'lte':
+              where[key].lte = opValue;
+              break;
+            case 'gt':
+              where[key].gt = opValue;
+              break;
+            case 'gte':
+              where[key].gte = opValue;
+              break;
+            case 'contains':
+              where[key].contains = opValue;
+              break;
+            case 'startsWith':
+              where[key].startsWith = opValue;
+              break;
+            case 'endsWith':
+              where[key].endsWith = opValue;
+              break;
+            case 'mode':
+              where[key].mode = opValue;
+              break;
+            default:
+              where[key] = opValue;
+          }
+        }
+      } else {
+        where[key] = value;
+      }
+    }
+    
+    return where;
+  }
+  
   // Convert domain user to Prisma user
   private toPrismaUser(user: Partial<User>): any {
+    console.log('Converting user to Prisma format:', JSON.stringify(user, null, 2));
+    
+    // Ensure required fields have defaults
+    const userWithDefaults = {
+      firstName: '', // Required field with default empty string
+      lastName: null,
+      role: UserRole.MEMBER,
+      isActive: true,
+      emailVerified: false,
+      ...user, // User-provided values will override defaults
+    };
+    
     const userData: any = {};
     
     // Map all user properties to Prisma format
-    if (user.id !== undefined) userData.id = user.id;
-    if (user.email !== undefined) userData.email = user.email;
-    if (user.password !== undefined) userData.password = user.password;
-    if (user.firstName !== undefined) userData.firstName = user.firstName;
-    if (user.lastName !== undefined) userData.lastName = user.lastName;
-    if (user.role !== undefined) userData.role = toPrismaRole(user.role);
-    if (user.isActive !== undefined) userData.isActive = user.isActive;
-    if (user.emailVerified !== undefined) userData.emailVerified = user.emailVerified;
+    if (userWithDefaults.id !== undefined) userData.id = userWithDefaults.id;
+    if (userWithDefaults.email !== undefined) userData.email = userWithDefaults.email;
+    if (userWithDefaults.password !== undefined) userData.password = userWithDefaults.password;
+    // Ensure firstName is a string (not the String constructor)
+    userData.firstName = typeof userWithDefaults.firstName === 'string' ? userWithDefaults.firstName : '';
+    if (typeof userWithDefaults.firstName !== 'string') {
+      console.error('firstName is not a string! Value:', userWithDefaults.firstName);
+    }
+    if (userWithDefaults.lastName !== undefined) userData.lastName = userWithDefaults.lastName;
+    userData.role = toPrismaRole(userWithDefaults.role);
+    userData.isActive = userWithDefaults.isActive;
+    userData.emailVerified = userWithDefaults.emailVerified;
+    
+    console.log('Converted user data:', JSON.stringify(userData, null, 2));
     if (user.lastLoginAt !== undefined) userData.lastLoginAt = user.lastLoginAt;
     if (user.lastActivityAt !== undefined) userData.lastActivityAt = user.lastActivityAt;
     if (user.failedLoginAttempts !== undefined) userData.failedLoginAttempts = user.failedLoginAttempts;
@@ -101,36 +185,60 @@ export class PrismaUserRepository implements IUserRepository {
   }
 
   // Create a new user
-  async create(user: Partial<User>): Promise<User> {
+  async create(userData: Partial<User>): Promise<User> {
+    console.log('Creating user with data:', JSON.stringify(userData, null, 2));
+    
+    const userWithDefaults = {
+      ...userData,
+      role: userData.role || UserRole.MEMBER,
+      isActive: userData.isActive ?? true,
+      emailVerified: userData.emailVerified ?? false,
+    };
+    
+    console.log('User data with defaults:', JSON.stringify(userWithDefaults, null, 2));
+    
+    const prismaData = this.toPrismaUser(userWithDefaults);
+    console.log('Prisma data before create:', JSON.stringify(prismaData, null, 2));
+    
     try {
-      const userData = this.toPrismaUser(user);
       const createdUser = await this.prisma.user.create({
-        data: userData,
-      });
-      return this.toDomain(createdUser)!;
-    } catch (error) {
-      if (this.isPrismaError(error, 'P2002')) {
-        throw new Error('User with this email already exists');
-      }
-      throw error;
-    }
-  }
-
-  // Find a user by filter
-  async findOne(filter: FilterCondition<User>): Promise<User | null> {
-    try {
-      const user = await this.prisma.user.findFirst({
-        where: filter as any,
+        data: prismaData,
         include: {
           createdBy: true,
           updatedBy: true,
         },
       });
-      return this.toDomain(user);
+      
+      console.log('Created user in database:', JSON.stringify(createdUser, null, 2));
+      return this.toDomain(createdUser)!;
     } catch (error) {
-      console.error('Error in findOne:', error);
+      console.error('Error creating user in database:', error);
       throw error;
     }
+  }
+
+  async findById(id: string): Promise<User | null> {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      include: {
+        createdBy: true,
+        updatedBy: true,
+      },
+    });
+    return this.toDomain(user);
+  }
+
+  // Find a user by filter
+  async findOne(filter: FilterCondition<User>): Promise<User | null> {
+    const where = this.toPrismaWhere(filter);
+    const user = await this.prisma.user.findFirst({
+      where,
+      include: {
+        createdBy: true,
+        updatedBy: true,
+      },
+    });
+    return this.toDomain(user);
   }
 
   // Find users by filter
@@ -151,31 +259,31 @@ export class PrismaUserRepository implements IUserRepository {
   }
 
   // Update a user
-  async update(id: string, update: Partial<User>): Promise<User | null> {
-    try {
-      const userData = this.toPrismaUser(update);
-      
-      // Update the user
-      const updatedUser = await this.prisma.user.update({
-        where: { id },
-        data: {
-          ...userData,
-          updatedAt: new Date(),
-        },
-        include: {
-          createdBy: true,
-          updatedBy: true,
-        },
-      });
-      
-      return this.toDomain(updatedUser);
-    } catch (error) {
-      if (this.isPrismaError(error, 'P2025')) {
-        // Record not found
-        return null;
+  async update(id: string, data: Partial<User>): Promise<User> {
+    // Convert domain model to Prisma data model
+    const updateData = this.toPrismaUser(data);
+    
+    // Remove undefined values to avoid Prisma errors
+    Object.keys(updateData).forEach(key => {
+      if (updateData[key] === undefined) {
+        delete updateData[key];
       }
-      throw error;
+    });
+    
+    const updatedUser = await this.prisma.user.update({
+      where: { id },
+      data: updateData,
+      include: {
+        createdBy: true,
+        updatedBy: true,
+      },
+    });
+    
+    const domainUser = this.toDomain(updatedUser);
+    if (!domainUser) {
+      throw new Error('Failed to convert updated user to domain model');
     }
+    return domainUser;
   }
 
   // Delete a user (hard delete)
